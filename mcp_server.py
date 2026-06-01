@@ -56,7 +56,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         
         return [TextContent(type="text", text="\n".join(lines))]
     raise ValueError(f"Неизвестный инструмент: {name}")
-
+# 4. Запускаем сервер
 # Create web app using starlette/fastapi routes via sse
 from mcp.server.sse import SseServerTransport
 from fastapi.responses import Response
