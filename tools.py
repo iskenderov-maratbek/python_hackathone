@@ -35,7 +35,6 @@ def _log(event: str, message_obj: Dict[str, Any], level: str = "info"):
     try:
         message_json = json.dumps(message_obj, ensure_ascii=False, default=str)
     except Exception:
-        # На случай, если в message_obj есть несерилизуемые объекты
         message_json = json.dumps({"note": "unserializable message"}, ensure_ascii=False)
     extra = {"event": event}
     if level == "info":
@@ -119,11 +118,9 @@ def get_db_schema(arguments: dict = None) -> str:
                 options = cursor[0].get("options", {})
                 validator = options.get("validator", {})
 
-                # Для безопасности — не логируем полные правила, только факт их наличия и краткую структуру
                 validation_summary = "No constraints defined"
                 if validator:
                     jschema = validator.get("$jsonSchema", validator)
-                    # Составляем краткую сводку: перечислим ключи верхнего уровня
                     if isinstance(jschema, dict):
                         validation_summary = {"top_keys": list(jschema.keys())[:10]}
                     else:
@@ -187,29 +184,22 @@ def execute_mongodb_query(arguments: dict) -> str:
     masked_args = _mask_params(arguments)
     _log("execute_mongodb_query.start", {"arguments_preview": {"collection_name": masked_args.get("collection_name"), "operation": masked_args.get("operation")}}, "info")
 
-    # Явно берём params — это то, что нужно передать детектору/нормализаторам
     params = arguments.get("query_params", {}) or {}
 
-    # --- Нормализация / детекция входа ---
     try:
-        # detect_and_normalize ожидает структуру с параметрами операции
         mode, payload = detect_and_normalize(params)
     except ValueError as e:
         _log("execute_mongodb_query.invalid_input", {"error": str(e)}, "warning")
         return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
-    # логируем кратко результат детекции
     _log("execute_mongodb_query.detected", {"detected_mode": mode, "payload_type": str(type(payload))}, "info")
 
-    # Если клиент явно указал operation, используем его как hint, но payload остаётся нормализованным
     coll_name = arguments.get("collection_name")
-    operation = arguments.get("operation")  # может быть None, тогда используем mode
+    operation = arguments.get("operation")  
 
-    # Если operation задан и не совпадает с детектированным mode — логируем предупреждение, но всё равно пытаемся выполнить
     if operation and operation != mode:
         _log("execute_mongodb_query.operation_mismatch", {"declared": operation, "detected": mode}, "warning")
 
-    # выбираем фактический режим выполнения: предпочитаем declared operation, иначе детектированный
     exec_mode = operation if operation else mode
 
     allowed_collections = ["employees", "expenses", "contracts", "tasks"]
@@ -226,7 +216,6 @@ def execute_mongodb_query(arguments: dict) -> str:
         # -------------------------
         if exec_mode == "aggregate":
             if not isinstance(payload, list):
-                # попытка восстановить pipeline из raw params
                 try:
                     pipeline = normalize_pipeline(params.get("pipeline", params))
                     payload = pipeline
@@ -280,7 +269,6 @@ def execute_mongodb_query(arguments: dict) -> str:
         # INSERT
         # -------------------------
         elif exec_mode == "insert":
-            # payload должен быть dict или list
             docs = payload
             if not isinstance(docs, (dict, list)):
                 try:
@@ -290,7 +278,6 @@ def execute_mongodb_query(arguments: dict) -> str:
                     _log("insert.invalid_payload", {"type": str(type(payload)), "error": str(e)}, "warning")
                     return json.dumps({"status": "error", "message": "Invalid insert payload"}, ensure_ascii=False)
 
-            # теперь docs — либо dict, либо list
             if isinstance(docs, dict):
                 doc = docs
                 _log("insert.attempt", {"collection": coll_name, "doc_keys": list(doc.keys())[:10]}, "info")
@@ -320,7 +307,6 @@ def execute_mongodb_query(arguments: dict) -> str:
         # UPDATE
         # -------------------------
         elif exec_mode == "update":
-            # payload — ожидаем canonical: {"filter": {...}, "update": {...}} или {"_id": "...", "update": {...}} или похожая структура
             update_payload = payload
             if not isinstance(update_payload, dict):
                 _log("update.invalid_payload_type", {"type": str(type(update_payload))}, "warning")
@@ -328,7 +314,6 @@ def execute_mongodb_query(arguments: dict) -> str:
 
             _log("update.attempt", {"collection": coll_name, "params_preview": _mask_params(update_payload)}, "info")
 
-            # Попытка извлечь _id
             task_id = update_payload.get("_id") or (update_payload.get("filter") or {}).get("_id")
             update_data = update_payload.get("update") or {k: v for k, v in update_payload.items() if k not in ["_id", "filter", "update", "collection_name", "operation"]}
 
@@ -336,7 +321,6 @@ def execute_mongodb_query(arguments: dict) -> str:
                 _log("update.missing_id_or_filter", {"collection": coll_name}, "warning")
                 return json.dumps({"status": "error", "message": "Missing _id or filter"}, ensure_ascii=False)
 
-            # Если указан filter вместо _id, используем его
             if update_payload.get("filter") and not task_id:
                 filter_doc = update_payload.get("filter")
             else:
@@ -347,7 +331,6 @@ def execute_mongodb_query(arguments: dict) -> str:
                     _log("update.invalid_id", {"provided_id": str(task_id)}, "warning")
                     return json.dumps({"status": "error", "message": "Invalid _id format"}, ensure_ascii=False)
 
-            # Выполняем обновление и логируем только счётчики
             result = collection.update_one(filter_doc, {"$set": update_data})
             _log("update.result", {"collection": coll_name, "matched": result.matched_count, "modified": result.modified_count}, "info")
             return json.dumps({"status": "success", "matched": result.matched_count, "modified": result.modified_count}, ensure_ascii=False)
@@ -357,6 +340,5 @@ def execute_mongodb_query(arguments: dict) -> str:
             return f"Error: Unsupported operation '{exec_mode}'"
 
     except Exception as e:
-        # Логируем ошибку, но не раскрываем чувствительные данные
         _log("execute_mongodb_query.error", {"collection": coll_name, "operation": exec_mode, "error": str(e)}, "error")
         return f"Error: {str(e)}"

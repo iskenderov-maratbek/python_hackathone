@@ -72,7 +72,6 @@ def detect_and_normalize(arguments):
 
     raise ValueError("Не распознано: пришлите pipeline (aggregate) или объект фильтра/документа")
 
-# Примеры специализированных нормализаторов (упрощённо)
 def normalize_pipeline(raw):
     p = try_parse(raw)
     # indexed dict -> list
