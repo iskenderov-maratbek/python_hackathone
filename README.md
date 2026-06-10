@@ -134,7 +134,3 @@ This project meets key hackathon goals:
 - **Multi-step capability**: the agent can plan and run workflows through JSON-RPC tool calls
 - **Partner integration**: demonstrates MongoDB partner alignment and MCP-style tool execution
 
-## Security and Deployment Notes
-
-- `config.py` contains a MongoDB connection string. For production or public submission, move secrets to environment variables or a secure vault.
-- This repository is designed as a hackathon submission and can be extended with additional MCP or partner-specific features.
