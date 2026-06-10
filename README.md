@@ -4,7 +4,8 @@ This repository contains a Python-based JSON-RPC 2.0 microservice built for a ha
 
 ## Project Overview
 
-This project is a FastAPI application that exposes a JSON-RPC 2.0 interface for agent-style tool calls. The service provides:
+This project is a FastAPI application that exposes a JSON-RPC 2.0 interface for agent-style tool calls. 
+The service provides:
 
 - JSON-RPC 2.0 support over HTTP POST
 - standard JSON-RPC methods: `initialize`, `tools/list`, and `tools/call`
@@ -137,14 +138,3 @@ This project meets key hackathon goals:
 
 - `config.py` contains a MongoDB connection string. For production or public submission, move secrets to environment variables or a secure vault.
 - This repository is designed as a hackathon submission and can be extended with additional MCP or partner-specific features.
-
-## Suggested Next Steps
-
-- Add explicit MCP registration and partner-specific metadata support
-- Extend the tool set to support more MongoDB operations and richer query validation
-- Add a frontend or CLI agent client to orchestrate JSON-RPC requests
-- Build a demo flow showing a multi-stage task execution pipeline
-
-## License
-
-Add a public open-source license file (`LICENSE`) before submission to meet hackathon requirements.
