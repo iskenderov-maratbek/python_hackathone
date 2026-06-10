@@ -11,6 +11,14 @@ This service exposes a JSON-RPC 2.0 interface for agent-driven tool execution. I
 - handle tool requests via a standard JSON-RPC pipeline
 - provide structured logs for traceability
 
+## Architectural Highlights
+
+### Dynamic Data Integration
+Unlike static agent implementations that require hardcoded schema definitions, our agent utilizes **Dynamic Schema Discovery**.  
+Upon initialization, the agent retrieves the current database structure, allowing seamless integration of new collections and fields without requiring manual updates to the MCP server manifest or core logic.  
+
+This ensures maximum scalability for growing municipal datasets.
+
 ## What the Project Does
 
 The application supports the following flows:
@@ -128,13 +136,7 @@ c:/Users/king/Documents/projects/python_hackathone/.venv/Scripts/python.exe -m u
 }
 ```
 
-## Architectural Highlights
 
-### Dynamic Data Integration
-Unlike static agent implementations that require hardcoded schema definitions, our agent utilizes **Dynamic Schema Discovery**.  
-Upon initialization, the agent retrieves the current database structure, allowing seamless integration of new collections and fields without requiring manual updates to the MCP server manifest or core logic.  
-
-This ensures maximum scalability for growing municipal datasets.
 
 
 
