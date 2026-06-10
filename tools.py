@@ -28,10 +28,6 @@ logger.handlers = [handler]
 
 
 def _log(event: str, message_obj: Dict[str, Any], level: str = "info"):
-    """
-    Унифицированный логгер: сериализует message_obj в JSON и пишет в поток.
-    Поля PII должны быть предварительно замаскированы.
-    """
     try:
         message_json = json.dumps(message_obj, ensure_ascii=False, default=str)
     except Exception:
@@ -95,10 +91,6 @@ def check_db_health() -> bool:
 # Tools API
 # -------------------------
 def get_db_schema(arguments: dict = None) -> str:
-    """
-    Возвращает JSON-строку с описанием коллекций и правил валидации.
-    Не логируем полные схемы в сыром виде — только метаданные и количество коллекций.
-    """
     _log("get_db_schema.start", {"note": "Fetching database schema"}, "info")
     try:
         collections = db.list_collection_names()
