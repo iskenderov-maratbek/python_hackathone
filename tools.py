@@ -2,6 +2,7 @@
 import json
 import logging
 import re
+import time
 from typing import Any, Dict
 
 from config import db, client
@@ -9,8 +10,9 @@ from bson.objectid import ObjectId
 from normalize_pipeline import (
     detect_and_normalize,
     normalize_pipeline,
-    normalize_find_params,
     normalize_insert_doc,
+    normalize_find_params,
+    normalize_delete_params,
 )
 
 # -------------------------
@@ -28,10 +30,6 @@ logger.handlers = [handler]
 
 
 def _log(event: str, message_obj: Dict[str, Any], level: str = "info"):
-    """
-    Унифицированный логгер: сериализует message_obj в JSON и пишет в поток.
-    Поля PII должны быть предварительно замаскированы.
-    """
     try:
         message_json = json.dumps(message_obj, ensure_ascii=False, default=str)
     except Exception:
@@ -59,10 +57,6 @@ def _mask_pii_in_str(s: str) -> str:
 
 
 def _mask_params(params: Any) -> Any:
-    """
-    Простая маскировка PII в параметрах запроса.
-    Поддерживает dict/list/str/primitive.
-    """
     if isinstance(params, dict):
         masked = {}
         for k, v in params.items():
@@ -95,10 +89,6 @@ def check_db_health() -> bool:
 # Tools API
 # -------------------------
 def get_db_schema(arguments: dict = None) -> str:
-    """
-    Возвращает JSON-строку с описанием коллекций и правил валидации.
-    Не логируем полные схемы в сыром виде — только метаданные и количество коллекций.
-    """
     _log("get_db_schema.start", {"note": "Fetching database schema"}, "info")
     try:
         collections = db.list_collection_names()
@@ -139,8 +129,20 @@ def get_db_schema(arguments: dict = None) -> str:
 
 
 def get_tools_manifest():
+    # simple in-memory cache to avoid reconstructing/returning the manifest too often
+    global _tools_manifest_cache, _tools_manifest_ts
+    try:
+        TTL = TOOLS_MANIFEST_TTL
+    except NameError:
+        TTL = 60
+
+    now = time.time()
+    if '_tools_manifest_cache' in globals() and _tools_manifest_cache is not None and (now - _tools_manifest_ts) < TTL:
+        _log("get_tools_manifest.cache_hit", {"note": "Returning cached tools manifest"}, "info")
+        return _tools_manifest_cache
+
     _log("get_tools_manifest", {"note": "Returning tools manifest"}, "info")
-    return [
+    manifest = [
         {
             "name": "get_db_schema",
             "description": "REQUIRED: Call this at the very beginning of every new request to retrieve the full database map (all collections and their structures).",
@@ -152,7 +154,7 @@ def get_tools_manifest():
         },
         {
             "name": "execute_mongodb_query",
-            "description": "Execute MongoDB operations on any collection. Always call get_db_schema first to verify the collection name and structure.",
+            "description": "Execute MongoDB operations on any collection. Always call get_db_schema first to verify the collection name and structure.\n\nOPERATION GUIDE:\n- find: Query documents with filters, sorting, pagination. Use when retrieving data.\n- aggregate: Run aggregation pipelines. Use for complex data transformations and grouping.\n- insert: Add new documents. Use when creating new records.\n- update: Modify existing documents. Use when changing field values (e.g., status='completed', deadline updates).\n- delete: Permanently remove documents. Use only when user explicitly says 'delete', 'remove', 'get rid of'.\n\nIMPORTANT: When user says 'task is done' or 'mark as completed', use UPDATE with {\"$set\": {\"status\": \"completed\"}} NOT delete.\nOnly use DELETE when user explicitly requests deletion.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -162,7 +164,7 @@ def get_tools_manifest():
                     },
                     "operation": {
                         "type": "string",
-                        "enum": ["find", "aggregate", "insert", "update"]
+                        "enum": ["find", "aggregate", "insert", "update", "delete"]
                     },
                     "query_params": {
                         "type": "object",
@@ -173,6 +175,16 @@ def get_tools_manifest():
             }
         }
     ]
+
+    _tools_manifest_cache = manifest
+    _tools_manifest_ts = now
+    # default TTL constant for easier tuning
+    try:
+        TOOLS_MANIFEST_TTL
+    except NameError:
+        TOOLS_MANIFEST_TTL = 60
+
+    return manifest
 
 
 def execute_mongodb_query(arguments: dict) -> str:
@@ -196,6 +208,15 @@ def execute_mongodb_query(arguments: dict) -> str:
         _log("execute_mongodb_query.operation_mismatch", {"declared": operation, "detected": mode}, "warning")
 
     exec_mode = operation if operation else mode
+
+    # If user explicitly requested delete, re-normalize payload as delete
+    if exec_mode == "delete" and mode != "delete":
+        try:
+            payload = normalize_delete_params(params, params)
+            _log("execute_mongodb_query.renormalized", {"from_mode": mode, "to_mode": "delete"}, "info")
+        except ValueError as e:
+            _log("execute_mongodb_query.invalid_delete_params", {"error": str(e)}, "warning")
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
     allowed_collections = ["employees", "expenses", "contracts", "tasks"]
     if coll_name not in allowed_collections:
@@ -312,6 +333,10 @@ def execute_mongodb_query(arguments: dict) -> str:
             task_id = update_payload.get("_id") or (update_payload.get("filter") or {}).get("_id")
             update_data = update_payload.get("update") or {k: v for k, v in update_payload.items() if k not in ["_id", "filter", "update", "collection_name", "operation"]}
 
+            if not isinstance(update_data, dict) or not update_data:
+                _log("update.invalid_payload", {"collection": coll_name, "payload": _mask_params(update_payload)}, "warning")
+                return json.dumps({"status": "error", "message": "Invalid update payload"}, ensure_ascii=False)
+
             if not task_id and not update_payload.get("filter"):
                 _log("update.missing_id_or_filter", {"collection": coll_name}, "warning")
                 return json.dumps({"status": "error", "message": "Missing _id or filter"}, ensure_ascii=False)
@@ -326,13 +351,39 @@ def execute_mongodb_query(arguments: dict) -> str:
                     _log("update.invalid_id", {"provided_id": str(task_id)}, "warning")
                     return json.dumps({"status": "error", "message": "Invalid _id format"}, ensure_ascii=False)
 
-            result = collection.update_one(filter_doc, {"$set": update_data})
+            if any(str(k).startswith("$") for k in update_data.keys()):
+                update_spec = update_data
+            else:
+                update_spec = {"$set": update_data}
+
+            result = collection.update_one(filter_doc, update_spec)
             _log("update.result", {"collection": coll_name, "matched": result.matched_count, "modified": result.modified_count}, "info")
             return json.dumps({"status": "success", "matched": result.matched_count, "modified": result.modified_count}, ensure_ascii=False)
+
+        # -------------------------
+        # DELETE
+        # -------------------------
+        elif exec_mode == "delete":
+            delete_payload = payload
+            if not isinstance(delete_payload, dict):
+                _log("delete.invalid_payload_type", {"type": str(type(delete_payload))}, "warning")
+                return json.dumps({"status": "error", "message": "Invalid payload for delete"}, ensure_ascii=False)
+
+            _log("delete.attempt", {"collection": coll_name, "params_preview": _mask_params(delete_payload)}, "info")
+
+            filter_doc = delete_payload.get("filter", {})
+            if not filter_doc:
+                _log("delete.missing_filter", {"collection": coll_name}, "warning")
+                return json.dumps({"status": "error", "message": "Filter is required for delete operation"}, ensure_ascii=False)
+
+            result = collection.delete_many(filter_doc)
+            _log("delete.result", {"collection": coll_name, "deleted": result.deleted_count}, "info")
+            return json.dumps({"status": "success", "deleted": result.deleted_count}, ensure_ascii=False)
 
         else:
             _log("execute_mongodb_query.unsupported", {"operation": exec_mode}, "warning")
             return f"Error: Unsupported operation '{exec_mode}'"
+
 
     except Exception as e:
         _log("execute_mongodb_query.error", {"collection": coll_name, "operation": exec_mode, "error": str(e)}, "error")

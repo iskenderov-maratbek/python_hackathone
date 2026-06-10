@@ -135,16 +135,22 @@ def handle_single_request(body: dict, request_uuid: str, client_addr: str):
         if is_notification:
             _log("info", "initialize_notification", {"id": request_id}, request_uuid, client_addr)
             return None
+        tools_manifest = tools.get_tools_manifest()
         response = {
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
                 "protocolVersion": "2025-11-25",
-                "capabilities": {"tools": {}},
+                "capabilities": {
+                    "tools": {
+                        "manifest": tools_manifest,
+                        "names": [t["name"] for t in tools_manifest]
+                    }
+                },
                 "serverInfo": {"name": "municipal-director-mcp", "version": "1.0.0"}
             }
         }
-        _log("info", "initialize_response", {"id": request_id}, request_uuid, client_addr)
+        _log("info", "initialize_response", {"id": request_id, "tools_count": len(tools_manifest)}, request_uuid, client_addr)
         return response
 
     if method == "tools/list":
@@ -177,7 +183,6 @@ async def mcp_adk_streaming_router(request: Request):
     client_addr = request.client.host if request.client else "-"
     _log("info", "incoming_http", {"path": str(request.url.path), "method": "POST"}, request_uuid, client_addr)
 
-    print("================================================================================================")
     print("================================================================================================")
     _log("info", "attempt_read_body", {"note": "Attempting to read JSON body"}, request_uuid, client_addr)
 

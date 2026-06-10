@@ -19,7 +19,7 @@ The application supports the following flows:
 - `tools/list` — returns the available tool manifest
 - `tools/call` — invokes a tool with structured arguments
 - `get_db_schema` — returns a safe summary of MongoDB collections and validation rules
-- `execute_mongodb_query` — performs `find`, `aggregate`, `insert`, and `update` operations on authorized collections
+- `execute_mongodb_query` — performs `find`, `aggregate`, `insert`, `update`, and `delete` operations on authorized collections
 
 ## Why This Fits the Hackathon
 
@@ -45,7 +45,8 @@ This implementation is built for the agent challenge by focusing on:
 - `find` — query documents with filter, sort, skip, limit, and projection
 - `aggregate` — run MongoDB aggregation pipelines
 - `insert` — insert a single document or a batch of documents
-- `update` — update documents by `_id` or by explicit filter
+- `update` — update documents by `_id` or by explicit filter (use for status changes, field updates)
+- `delete` — permanently remove documents by filter (use only when explicit deletion is requested)
 
 ## Installation
 
@@ -127,6 +128,65 @@ c:/Users/king/Documents/projects/python_hackathone/.venv/Scripts/python.exe -m u
   }
 }
 ```
+
+### Mark task as completed (UPDATE)
+
+When user says: "задача выполнена, отметить как завершенная"
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "execute_mongodb_query",
+    "arguments": {
+      "collection_name": "tasks",
+      "operation": "update",
+      "query_params": {
+        "filter": {"_id": "6a2597076238c6226e583290"},
+        "update": {"$set": {"status": "completed"}}
+      }
+    }
+  }
+}
+```
+
+### Delete completed task (DELETE)
+
+When user says: "удали выполненную задачу" or "удалить завершенные задачи"
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "tools/call",
+  "params": {
+    "name": "execute_mongodb_query",
+    "arguments": {
+      "collection_name": "tasks",
+      "operation": "delete",
+      "query_params": {
+        "filter": {"status": "completed"}
+      }
+    }
+  }
+}
+```
+
+## Agent Decision Guide
+
+The agent should interpret user intent as follows:
+
+| User Says | Operation | Reason |
+|-----------|-----------|--------|
+| "задача выполнена" | UPDATE with `status: "completed"` | Preserve record, just change status |
+| "отметить как готово" | UPDATE | Keep historical data |
+| "удали", "удалить", "убрать" | DELETE | User explicitly wants removal |
+| "task is done, please cleanup" | Ambiguous - use UPDATE first, then ask | Safer default |
+| "remove this task" | DELETE | Explicit deletion request |
+
+**Rule**: When in doubt, prefer UPDATE over DELETE. Deleted data cannot be recovered.
 
 ## Architecture Notes
 

@@ -9,11 +9,30 @@ def try_parse(v):
             return v
     return v
 
+def normalize_key(k):
+    if not isinstance(k, str):
+        return k
+
+    m = QUOTED_KEY_RE.match(k)
+    if m:
+        k = m.group(1)
+
+    # remove leading/trailing dashes from quoted/hyphenated keys
+    k = re.sub(r'^-+|-+$', '', k)
+    return k
+
+
 def clean_keys(d):
-    return {
-        (QUOTED_KEY_RE.match(k).group(1) if isinstance(k, str) and QUOTED_KEY_RE.match(k) else k): v
-        for k, v in d.items()
-    }
+    normalized = {}
+    for k, v in d.items():
+        nk = normalize_key(k)
+        if nk in normalized and nk != k:
+            # preserve original key when normalization would collide with an existing key
+            normalized[k] = v
+        else:
+            normalized[nk] = v
+    return normalized
+
 
 def looks_like_pipeline(x):
     # list of stages where first stage has $-operator keys
@@ -33,11 +52,57 @@ def preprocess(args):
 # Hint keys that indicate a find-like payload
 FIND_HINT_KEYS = {"filter", "filters", "query", "limit", "skip", "sort", "projection"}
 
+# Explicit find parameters (distinguish from bare filter which could be delete or find)
+EXPLICIT_FIND_PARAMS = {"limit", "skip", "sort", "projection"}
+
+
+# Hint keys that indicate an update payload
+UPDATE_HINT_KEYS = {"update", "filter"}
+
+def normalize_update_params(update_obj, full_args):
+    update_parsed = try_parse(update_obj) if update_obj is not None else {}
+    if not isinstance(update_parsed, dict):
+        raise ValueError("Update payload must be an object")
+
+    # allow `query` as an alias for filter in update payloads
+    filter_obj = update_parsed.get("filter") or update_parsed.get("query") or {}
+    if isinstance(filter_obj, str):
+        filter_obj = try_parse(filter_obj) if filter_obj else {}
+
+    update_doc = update_parsed.get("update")
+    if update_doc is None:
+        update_doc = {
+            k: v
+            for k, v in update_parsed.items()
+            if k not in ["filter", "query", "_id", "collection_name", "operation"]
+        }
+
+    if not isinstance(update_doc, dict) or not update_doc:
+        raise ValueError("Update payload must include a non-empty update object")
+
+    return {"filter": filter_obj, "update": update_doc}
+
+def normalize_delete_params(delete_obj, full_args):
+    delete_parsed = try_parse(delete_obj) if delete_obj is not None else {}
+    if not isinstance(delete_parsed, dict):
+        raise ValueError("Delete payload must be an object")
+
+    # allow `query` as an alias for filter in delete payloads
+    filter_obj = delete_parsed.get("filter") or delete_parsed.get("query") or {}
+    if isinstance(filter_obj, str):
+        filter_obj = try_parse(filter_obj) if filter_obj else {}
+
+    if not filter_obj:
+        raise ValueError("Delete payload must include a non-empty filter")
+
+    return {"filter": filter_obj}
+
 def detect_and_normalize(arguments):
     """
     Returns (mode, payload) where:
-      - mode in {"aggregate","find","insert"}
-      - payload is canonical: list[dict] for aggregate, dict for find, list|dict for insert
+      - mode in {"aggregate","find","insert","update"}
+      - payload is canonical: list[dict] for aggregate, dict for find, list|dict for insert, dict for update
+      - NOTE: delete is NOT auto-detected; must be specified via operation="delete" in tools.py
     """
     args = preprocess(arguments)
 
@@ -52,21 +117,25 @@ def detect_and_normalize(arguments):
             if looks_like_pipeline(v2):
                 return "aggregate", normalize_pipeline(v2)
 
-    # 2) find-like: presence of hint keys
+    # 2) update-like: presence of update key
+    if isinstance(args, dict) and "update" in args:
+        return "update", normalize_update_params(args, args)
+
+    # 3) find-like: presence of any hint key (filter, query, limit, sort, skip, projection)
     if isinstance(args, dict):
         if any(k in args for k in FIND_HINT_KEYS):
             # choose explicit filter if present
             filter_obj = args.get("filter") or args.get("filters") or args.get("query") or {}
             return "find", normalize_find_params(filter_obj, args)
 
-    # 3) find-like: first dict-like value (fallback)
+    # 4) find-like: first dict-like value (fallback)
     if isinstance(args, dict):
         for v in args.values():
             v2 = try_parse(v)
             if isinstance(v2, dict):
                 return "find", normalize_find_params(v2, args)
 
-    # 4) insert: treat dict as document(s)
+    # 5) insert: treat dict as document(s)
     if isinstance(args, dict):
         return "insert", normalize_insert_doc(args)
 
@@ -91,11 +160,6 @@ def normalize_pipeline(raw):
     return cleaned
 
 def normalize_find_params(filter_obj, full_args):
-    """
-    filter_obj: dict or JSON string or None
-    full_args: dict with optional limit/skip/projection/sort
-    Returns canonical dict: {"filter":..., "limit":..., "skip":..., "projection":..., "sort":...}
-    """
     # parse filter_obj if it's a string
     filter_parsed = try_parse(filter_obj) if filter_obj is not None else {}
     if not isinstance(filter_parsed, dict):
