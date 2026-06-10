@@ -5,15 +5,12 @@ from mcp.types import Tool, TextContent
 from pymongo import MongoClient
 from datetime import datetime
 
-# 1. Инициализируем базовый MCP сервер
 mcp = Server("mongodb-mcp-partner-server")
 
-# 2. Подключаемся к MongoDB
 client = MongoClient("mongodb://localhost:27017/")
 db = client["hackathon_agent"]
 collection = db["expenses"]
 
-# 3. Регистрируем доступные инструменты для Gemini
 @mcp.list_tools()
 async def list_tools() -> list[Tool]:
     return [
@@ -56,8 +53,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         
         return [TextContent(type="text", text="\n".join(lines))]
     raise ValueError(f"Неизвестный инструмент: {name}")
-# 4. Запускаем сервер
-# Create web app using starlette/fastapi routes via sse
 from mcp.server.sse import SseServerTransport
 from fastapi.responses import Response
 from fastapi import Request
@@ -67,7 +62,6 @@ app = FastAPI()
 
 @app.post("/sse")
 async def handle_sse(request: Request):
-    # Возвращаем структуру строго по спецификации Google MCP Tool object schema
     return {
         "tools": [
           {
