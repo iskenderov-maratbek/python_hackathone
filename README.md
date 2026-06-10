@@ -188,13 +188,13 @@ The agent should interpret user intent as follows:
 
 | User Says | Operation | Reason |
 |-----------|-----------|--------|
-| "задача выполнена" | UPDATE with `status: "completed"` | Preserve record, just change status |
-| "отметить как готово" | UPDATE | Keep historical data |
-| "удали", "удалить", "убрать" | DELETE | User explicitly wants removal |
-| "task is done, please cleanup" | Ambiguous - use UPDATE first, then ask | Safer default |
+| "task completed" | UPDATE with `status: "completed"` | Preserve the record, only change status |
+| "mark as ready" | UPDATE | Keep historical data intact |
+| "delete", "remove", "erase" | DELETE | User explicitly requests removal |
+| "task is done, please cleanup" | Ambiguous — use UPDATE first, then ask | Safer default to avoid data loss |
 | "remove this task" | DELETE | Explicit deletion request |
 
-**Rule**: When in doubt, prefer UPDATE over DELETE. Deleted data cannot be recovered.
+**Rule**: When uncertain, prefer UPDATE over DELETE. Deleted data cannot be recovered.
 
 
 
