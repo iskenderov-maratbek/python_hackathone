@@ -1,46 +1,55 @@
 # MongoDB Agent Hackathon Project
 
-This repository contains a Python-based JSON-RPC 2.0 microservice built for a hackathon agent submission. It demonstrates a backend agent pattern with MongoDB integration, tool execution, structured logging, and a partner-ready MCP-style architecture.
+Backend that demonstrates a JSON-RPC 2.0 agent service built on FastAPI and MongoDB. This project is tailored for an MCP-enabled agent architecture and aligns with the MongoDB partner track.
 
-## Project Overview
+## Project Summary
 
-This project is a FastAPI application that exposes a JSON-RPC 2.0 interface for agent-style tool calls. 
-The service provides:
+This service exposes a JSON-RPC 2.0 interface for agent-driven tool execution. It is designed to operate as the backend for a task-oriented agent that can:
 
-- JSON-RPC 2.0 support over HTTP POST
-- standard JSON-RPC methods: `initialize`, `tools/list`, and `tools/call`
-- two main tool implementations:
-  - `get_db_schema` — returns collection structure and validation metadata
-  - `execute_mongodb_query` — executes MongoDB operations such as `find`, `aggregate`, `insert`, and `update`
-- structured logs for request tracing and tool execution behavior
+- discover database schema metadata
+- execute MongoDB queries and updates
+- handle tool requests via a standard JSON-RPC pipeline
+- provide structured logs for traceability
 
-## Hackathon Context
+## What the Project Does
 
-This project is built for a hackathon where the goal is to create agents that do more than chat. It is especially suitable for a partner track that uses MongoDB as a backend service and integrates with a Model Context Protocol (MCP)-style architecture.
+The application supports the following flows:
 
-### Partner Track
+- `initialize` — basic handshake for agent startup
+- `tools/list` — returns the available tool manifest
+- `tools/call` — invokes a tool with structured arguments
+- `get_db_schema` — returns a safe summary of MongoDB collections and validation rules
+- `execute_mongodb_query` — performs `find`, `aggregate`, `insert`, and `update` operations on authorized collections
 
-This submission is aligned with the **MongoDB** partner track and demonstrates a practical integration with MongoDB collections and query execution. It is designed as a backend service for an agent that can reason, plan, and execute data operations.
+## Why This Fits the Hackathon
+
+This implementation is built for the agent challenge by focusing on:
+
+- **Actionable intelligence** — not just answers, but tool execution
+- **Partner integration** — MongoDB serves as the backend and partner data service
+- **Multi-step operations** — the agent can sequence database discovery and execution
+- **MCP-style compatibility** — supports a tool manifest and request/response model for agent orchestration
 
 ## Key Files
 
-- `main.py` — FastAPI app and JSON-RPC router
-- `tools.py` — tool logic for MongoDB operations and secure logging
-- `config.py` — MongoDB connection configuration and collection references
-- `normalize_pipeline.py` — request normalization helpers for pipeline and query parameters
-- `requirements.txt` — project dependencies
+- `main.py` — FastAPI JSON-RPC endpoint, request routing, and logging
+- `tools.py` — implementation of tool actions and MongoDB operations
+- `config.py` — MongoDB client configuration and collection access
+- `normalize_pipeline.py` — normalization helpers for query payloads and aggregation pipelines
+- `requirements.txt` — dependency list for the Python environment
 
-## Tech Stack
+## Supported MongoDB Operations
 
-- Python 3.x
-- FastAPI
-- Uvicorn
-- PyMongo
-- MongoDB
+`execute_mongodb_query` supports:
+
+- `find` — query documents with filter, sort, skip, limit, and projection
+- `aggregate` — run MongoDB aggregation pipelines
+- `insert` — insert a single document or a batch of documents
+- `update` — update documents by `_id` or by explicit filter
 
 ## Installation
 
-Install dependencies from `requirements.txt`:
+Install the required packages:
 
 ```bash
 c:/Users/king/Documents/projects/python_hackathone/.venv/Scripts/python.exe -m pip install -r requirements.txt
@@ -48,19 +57,19 @@ c:/Users/king/Documents/projects/python_hackathone/.venv/Scripts/python.exe -m p
 
 ## Running the Service
 
-Start the service directly:
+Start the application directly:
 
 ```bash
 c:/Users/king/Documents/projects/python_hackathone/.venv/Scripts/python.exe main.py
 ```
 
-Or run with Uvicorn for local development:
+Or run with Uvicorn:
 
 ```bash
 c:/Users/king/Documents/projects/python_hackathone/.venv/Scripts/python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-## JSON-RPC Usage Examples
+## Example JSON-RPC Requests
 
 ### Initialize the agent
 
@@ -121,16 +130,8 @@ c:/Users/king/Documents/projects/python_hackathone/.venv/Scripts/python.exe -m u
 
 ## Architecture Notes
 
-- The server is built on JSON-RPC 2.0 and returns one response per request.
-- Batch requests are supported by collecting individual responses into a single JSON array.
-- Notifications are supported and do not return a response.
-- Tool processing runs synchronously inside FastAPI routes, so the client receives the final result after execution completes.
-
-## Hackathon Alignment
-
-This project meets key hackathon goals:
-
-- **Beyond chat**: the backend performs real tool execution and database operations
-- **Multi-step capability**: the agent can plan and run workflows through JSON-RPC tool calls
-- **Partner integration**: demonstrates MongoDB partner alignment and MCP-style tool execution
+- The service follows JSON-RPC 2.0 semantics and returns one response per request.
+- Batch requests are supported and aggregated into a single JSON array response.
+- Notifications are handled correctly and do not return any response.
+- The backend runs synchronous tool execution inside FastAPI, so responses are returned once processing is finished.
 
