@@ -176,11 +176,6 @@ def get_tools_manifest():
 
 
 def execute_mongodb_query(arguments: dict) -> str:
-    """
-    Универсальная точка выполнения MongoDB операций.
-    Возвращает JSON-строку с результатом или ошибкой.
-    Логи минимальны: маскируем PII и логируем только метаданные (counts, status).
-    """
     masked_args = _mask_params(arguments)
     _log("execute_mongodb_query.start", {"arguments_preview": {"collection_name": masked_args.get("collection_name"), "operation": masked_args.get("operation")}}, "info")
 
